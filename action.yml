@@ -1,0 +1,87 @@
+name: "govulncheck-action"
+description: "Run govulncheck"
+inputs:
+  checkout:
+    description: "Checkout the repository"
+    required: false
+    default: true
+  patterns:
+    description: "Patterns to scan"
+    required: false
+    default: "./..."
+  chdir:
+    description: "Change to dir before running govulncheck"
+    required: false
+    default: "."
+  go-version-file:
+    description: "Path to the go.mod, go.work, .go-version, or .tool-versions file."
+    required: false
+  check-latest:
+    description: "Set this option to true if you want the action to always check for the latest available Go version that satisfies the version spec"
+    required: false
+    default: true
+  cache:
+    description: "Used to specify whether caching is needed. Set to true, if you'd like to enable caching."
+    required: false
+    default: true
+  cache-dependency-path:
+    description: "Used to specify the path to a dependency file (for monorepos) - go.sum"
+    required: false
+    default: ""
+  version:
+    description: "The version of govulncheck"
+    required: false
+    default: "latest"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: inputs.checkout != "false"
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        check-latest: ${{ inputs.check-latest }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
+    - name: Install govulncheck
+      run: go install "golang.org/x/vuln/cmd/govulncheck@${VERSION}"
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+    - name: Run govulncheck
+      shell: bash
+      env:
+        CHDIR: ${{ inputs.chdir }}
+        PATTERNS: ${{ inputs.patterns }}
+      run: |
+        result="$(mktemp)"
+        check() {
+          govulncheck -C "$CHDIR" "$PATTERNS" 2>&1 | tee "$result"
+        }
+        summary() {
+          awk '
+          $1 ~ /^Vulnerability/ {
+            x = 1
+          }
+          $0 ~ /Fixed in:/ {
+            print
+            x = 0
+          }
+          {
+            if (x == 1) print
+          }' "$result"
+        }
+        if check ; then
+          echo "## No vulnerabilities found." >> $GITHUB_STEP_SUMMARY
+        else
+          fixable_count=$(grep "Fixed in:" "$out" | grep -vc "N/A" || true)
+          if [[ "$fixable_count" -gt 0 ]] ; then
+            echo "## Found ${fixable_count} vulnerabilities with available fixes." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Found vulnerabilities, but none have known fixes." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "```" >> $GITHUB_STEP_SUMMARY
+          summary >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
+          [[ "$fixable_count" = 0 ]]
+        fi
