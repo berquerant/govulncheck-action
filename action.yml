@@ -74,7 +74,7 @@ runs:
         if check ; then
           echo "## No vulnerabilities found." >> $GITHUB_STEP_SUMMARY
         else
-          fixable_count=$(grep "Fixed in:" "$out" | grep -vc "N/A" || true)
+          fixable_count=$(grep "Fixed in:" "$result" | grep -vc "N/A" || true)
           if [[ "$fixable_count" -gt 0 ]] ; then
             echo "## Found ${fixable_count} vulnerabilities with available fixes." >> $GITHUB_STEP_SUMMARY
           else
