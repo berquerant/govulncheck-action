@@ -54,9 +54,8 @@ runs:
         CHDIR: ${{ inputs.chdir }}
         PATTERNS: ${{ inputs.patterns }}
       run: |
-        result="$(mktemp)"
         check() {
-          govulncheck -C "$CHDIR" "$PATTERNS" 2>&1 | tee "$result"
+          govulncheck -C "$CHDIR" "$PATTERNS"
         }
         summary() {
           awk '
@@ -69,19 +68,21 @@ runs:
           }
           {
             if (x == 1) print
-          }' "$result"
+          }'
         }
-        if check ; then
+        result="$(mktemp)"
+        if check 2>&1 > "$result" ; then
           echo "## No vulnerabilities found." >> $GITHUB_STEP_SUMMARY
         else
+          cat "$result"
           fixable_count=$(grep "Fixed in:" "$result" | grep -vc "N/A" || true)
           if [[ "$fixable_count" -gt 0 ]] ; then
             echo "## Found ${fixable_count} vulnerabilities with available fixes." >> $GITHUB_STEP_SUMMARY
           else
             echo "## Found vulnerabilities, but none have known fixes." >> $GITHUB_STEP_SUMMARY
           fi
-          echo "```" >> $GITHUB_STEP_SUMMARY
-          summary >> $GITHUB_STEP_SUMMARY
-          echo "```" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          summary < "$result" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           [[ "$fixable_count" = 0 ]]
         fi
