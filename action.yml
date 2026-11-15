@@ -71,18 +71,42 @@ runs:
           }'
         }
         result="$(mktemp)"
-        if check 2>&1 > "$result" ; then
-          echo "## No vulnerabilities found." >> $GITHUB_STEP_SUMMARY
-        else
+        trap 'rm -f "$result"' EXIT
+        set +e
+        NO_COLOR=1 check > "$result" 2>&1
+        status=$?
+        set -e
+
+        if [[ "$status" -eq 0 ]]; then
+          echo "## No vulnerabilities found." >> "$GITHUB_STEP_SUMMARY"
+        elif [[ "$status" -eq 3 ]]; then
           cat "$result"
           fixable_count=$(grep "Fixed in:" "$result" | grep -vc "N/A" || true)
-          if [[ "$fixable_count" -gt 0 ]] ; then
-            echo "## Found ${fixable_count} vulnerabilities with available fixes." >> $GITHUB_STEP_SUMMARY
+          if [[ "$fixable_count" -gt 0 ]]; then
+            echo "## Found ${fixable_count} vulnerabilities with available fixes." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "## Found vulnerabilities, but none have known fixes." >> $GITHUB_STEP_SUMMARY
+            echo "## Found vulnerabilities, but none have known fixes." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          summary < "$result" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          [[ "$fixable_count" = 0 ]]
+
+          summary_content="$(summary < "$result")"
+          if [[ -n "$summary_content" ]]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$summary_content" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -s "$result" ]]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat "$result" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          [[ "$fixable_count" -eq 0 ]]
+        else
+          cat "$result"
+          echo "## govulncheck failed (exit code ${status})" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s "$result" ]]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat "$result" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
         fi
